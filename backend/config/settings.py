@@ -28,6 +28,7 @@ R2_BUCKET = os.environ.get("R2_BUCKET_NAME")
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
+    ".localhost"
 ]
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

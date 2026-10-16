@@ -1,43 +1,51 @@
+
 import mimetypes
-import posixpath
 
-from django.http import Http404, StreamingHttpResponse
-from django.views.decorators.http import require_safe
+from django.http import Http404, HttpResponse
+from django.views.decorators.http import require_GET
 
-from common.storage import ObjectNotFound, get_object
-
-
-def _fetch(deploy_id: str, relative_path: str):
-    return get_object(f"dist/{deploy_id}/{relative_path}")
+from common.storage import get_object, ObjectNotFound
 
 
-@require_safe
+@require_GET
 def serve_site(request, path=""):
-    deploy_id = request.deploy_id
+    host = request.get_host().split(":")[0].lower()
 
-    # normpath on an absolute path collapses any ../ segments, so keys stay inside dist/<id>/
-    clean = posixpath.normpath("/" + path).lstrip("/")
-    if clean == "" or path.endswith("/"):
-        clean = posixpath.join(clean, "index.html")
+    # Extract deployment ID from 4s7fw.localhost
+    suffix = ".localhost"
+
+    if not host.endswith(suffix):
+        raise Http404("Deployment not found")
+
+    deployment_id = host[:-len(suffix)]
+
+    if not deployment_id or "." in deployment_id:
+        raise Http404("Invalid deployment hostname")
+
+    # Root URL serves index.html
+    file_path = path or "index.html"
+
+    # Prevent unsafe paths
+    if (
+        "\\" in file_path
+        or file_path.startswith("/")
+        or ".." in file_path.split("/")
+    ):
+        raise Http404("Invalid file path")
+
+    key = f"dist/{deployment_id}/{file_path}"
 
     try:
-        obj = _fetch(deploy_id, clean)
+        obj = get_object(key)
     except ObjectNotFound:
-        # Single-page-app fallback: extension-less routes get index.html
-        if "." in posixpath.basename(clean):
-            raise Http404("File not found")
-        clean = "index.html"
-        try:
-            obj = _fetch(deploy_id, clean)
-        except ObjectNotFound:
-            raise Http404("Site not found")
+        raise Http404("Site file not found")
+
+    content = obj["Body"].read()
 
     content_type = (
-        mimetypes.guess_type(clean)[0]
-        or obj.get("ContentType")
+        obj.get("ContentType")
+        or mimetypes.guess_type(file_path)[0]
         or "application/octet-stream"
     )
-    response = StreamingHttpResponse(obj["Body"].iter_chunks(), content_type=content_type)
-    if obj.get("ContentLength") is not None:
-        response["Content-Length"] = str(obj["ContentLength"])
-    return response
+
+    return HttpResponse(content, content_type=content_type)
