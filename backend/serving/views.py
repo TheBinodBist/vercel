@@ -8,19 +8,25 @@ from common.storage import get_object, ObjectNotFound
 
 
 @require_GET
-def serve_site(request, path=""):
+def serve_site(request, deployment_id=None, path=""):
     host = request.get_host().split(":")[0].lower()
 
-    # Extract deployment ID from 4s7fw.localhost
+
     suffix = ".localhost"
 
-    if not host.endswith(suffix):
-        raise Http404("Deployment not found")
+    if deployment_id is None:
+        if not host.endswith(suffix):
+            raise Http404("Deployment not found")
 
-    deployment_id = host[:-len(suffix)]
+        deployment_id = host[:-len(suffix)]
 
-    if not deployment_id or "." in deployment_id:
-        raise Http404("Invalid deployment hostname")
+    # Validate deployment ID
+    if (
+        not deployment_id
+        or not deployment_id.isalnum()
+        or len(deployment_id) > 20
+    ):
+        raise Http404("Invalid deployment ID")
 
     # Root URL serves index.html
     file_path = path or "index.html"

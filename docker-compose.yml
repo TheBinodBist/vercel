@@ -37,7 +37,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: vercel_worker
-    command: python manage.py run_worker
+    command: python manage.py run_deployer
     env_file:
       - ./backend/.env
     environment:
