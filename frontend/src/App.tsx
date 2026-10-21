@@ -9,6 +9,31 @@ import {
   GitBranch,
 } from "lucide-react";
 
+const API_URL = import.meta.env.VITE_API_URL?.replace(/\/+$/, "");
+
+if (!API_URL) {
+  console.error("VITE_API_URL is missing. Check your frontend .env file.");
+}
+
+async function readResponse(response: any) {
+  const text = await response.text();
+
+  if (!text) {
+    throw new Error(
+      `The server returned an empty response (HTTP ${response.status}).`,
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `The server returned invalid JSON (HTTP ${response.status}). ` +
+        `Response: ${text.slice(0, 200)}`,
+    );
+  }
+}
+
 function App() {
   const [repoUrl, setRepoUrl] = useState("");
   const [deployUrl, setDeployUrl] = useState("");
@@ -29,7 +54,7 @@ function App() {
 
     try {
       // Step 1: Start deployment
-      const response = await fetch("http://localhost:8000/api/deploy/", {
+      const response = await fetch(`${API_URL}/api/deploy/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -39,7 +64,7 @@ function App() {
         }),
       });
 
-      const data = await response.json();
+      const data = await readResponse(response);
 
       if (!response.ok) {
         throw new Error(
@@ -64,7 +89,7 @@ function App() {
         await new Promise((resolve) => setTimeout(resolve, interval));
 
         const statusResponse = await fetch(
-          `/api/status/?id=${encodeURIComponent(deployId)}`,
+          `${API_URL}/api/status/?id=${encodeURIComponent(deployId)}`,
         );
 
         if (!statusResponse.ok) {
@@ -76,7 +101,7 @@ function App() {
         console.log("Deployment status:", statusData.status);
 
         if (statusData.status === "deployed") {
-          const url = `http://${deployId}.localhost:8000/`;
+          const url = `${API_URL}/site/${deployId}/`;
           setDeployUrl(url);
           return;
         }
