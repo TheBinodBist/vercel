@@ -64,7 +64,7 @@ function App() {
         await new Promise((resolve) => setTimeout(resolve, interval));
 
         const statusResponse = await fetch(
-          `http://localhost:8000/api/status/?id=${encodeURIComponent(deployId)}`,
+          `/api/status/?id=${encodeURIComponent(deployId)}`,
         );
 
         if (!statusResponse.ok) {
