@@ -28,13 +28,9 @@ def _run(cmd, cwd):
             timeout=settings.BUILD_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        raise BuildError(
-            f"Command timed out: {' '.join(cmd)}"
-        ) from exc
+        raise BuildError(f"Command timed out: {' '.join(cmd)}") from exc
     except OSError as exc:
-        raise BuildError(
-            f"Could not run command {' '.join(cmd)}: {exc}"
-        ) from exc
+        raise BuildError(f"Could not run command {' '.join(cmd)}: {exc}") from exc
 
     if proc.stdout:
         logger.info("stdout: %s", proc.stdout)
@@ -44,8 +40,7 @@ def _run(cmd, cwd):
 
     if proc.returncode != 0:
         raise BuildError(
-            f"Command failed: {' '.join(cmd)} "
-            f"(exit code {proc.returncode})"
+            f"Command failed: {' '.join(cmd)} (exit code {proc.returncode})"
         )
 
 
@@ -56,9 +51,7 @@ def build_project(project_dir: Path) -> None:
         raise BuildError("npm is not installed or not available in PATH")
 
     if not (project_dir / "package.json").is_file():
-        raise BuildError(
-            f"package.json not found in {project_dir}"
-        )
+        raise BuildError(f"package.json not found in {project_dir}")
 
     flags = ["--no-audit", "--no-fund"]
 
@@ -75,20 +68,13 @@ def find_output_dir(project_dir: Path) -> Path:
 
     names = [
         configured,
-        *(
-            name
-            for name in OUTPUT_DIR_CANDIDATES
-            if name != configured
-        ),
+        *(name for name in OUTPUT_DIR_CANDIDATES if name != configured),
     ]
 
     for name in names:
         candidate = project_dir / name
 
-        if (
-            candidate.is_dir()
-            and (candidate / "index.html").is_file()
-        ):
+        if candidate.is_dir() and (candidate / "index.html").is_file():
             return candidate
 
     raise BuildError(
@@ -103,36 +89,41 @@ def process_deployment(deploy_id: str) -> None:
     work_root = Path(settings.WORK_DIR).resolve()
     project_dir = (work_root / "output" / deploy_id).resolve()
 
-    # Prevent an invalid deployment ID from escaping WORK_DIR.
     if not project_dir.is_relative_to(work_root):
         raise BuildError("Invalid deployment ID")
 
     try:
-        # Download the source files from R2.
+        # Step 1: Download source code from R2
         count = download_prefix(
             f"output/{deploy_id}/",
             work_root,
         )
 
         if count == 0:
-            raise BuildError(
-                f"No source files found in R2 for deployment {deploy_id}"
-            )
+            raise BuildError(f"No source files found for deployment {deploy_id}")
 
-        # Compile React/Vite/Create React App.
+        logger.info(
+            "Downloaded %s source files for %s",
+            count,
+            deploy_id,
+        )
+
+        # Step 2: Install dependencies and build project
         build_project(project_dir)
 
-        # Locate the production folder.
+        # Step 3: Find production build directory
         build_dir = find_output_dir(project_dir)
 
-        logger.info("Build output: %s", build_dir)
+        logger.info("Build output directory: %s", build_dir)
 
-        # Upload built HTML, CSS, JavaScript and assets.
-        # This prefix must match your serving view.
+        # Step 4: Upload production files to R2
         uploaded = upload_folder(
             build_dir,
-            f"output/{deploy_id}",
+            f"dist/{deploy_id}",
         )
+
+        if not uploaded:
+            raise BuildError("No production files were uploaded")
 
         logger.info(
             "Deployment %s uploaded %s production files",
@@ -141,4 +132,5 @@ def process_deployment(deploy_id: str) -> None:
         )
 
     finally:
+        # Step 5: Remove temporary local files
         shutil.rmtree(project_dir, ignore_errors=True)
