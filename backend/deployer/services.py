@@ -1,3 +1,4 @@
+
 import logging
 import shutil
 import subprocess
@@ -28,9 +29,13 @@ def _run(cmd, cwd):
             timeout=settings.BUILD_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        raise BuildError(f"Command timed out: {' '.join(cmd)}") from exc
+        raise BuildError(
+            f"Command timed out: {' '.join(cmd)}"
+        ) from exc
     except OSError as exc:
-        raise BuildError(f"Could not run command {' '.join(cmd)}: {exc}") from exc
+        raise BuildError(
+            f"Could not run command {' '.join(cmd)}: {exc}"
+        ) from exc
 
     if proc.stdout:
         logger.info("stdout: %s", proc.stdout)
@@ -40,11 +45,14 @@ def _run(cmd, cwd):
 
     if proc.returncode != 0:
         raise BuildError(
-            f"Command failed: {' '.join(cmd)} (exit code {proc.returncode})"
+            f"Command failed: {' '.join(cmd)} "
+            f"(exit code {proc.returncode})"
         )
 
 
-def build_project(project_dir: Path) -> None:
+def build_project(project_dir: Path, deploy_id: str) -> None:
+    """Install dependencies and build the project for its deployment URL."""
+
     npm = shutil.which("npm") or shutil.which("npm.cmd")
 
     if not npm:
@@ -60,10 +68,22 @@ def build_project(project_dir: Path) -> None:
     else:
         _run([npm, "install", *flags], project_dir)
 
-    _run([npm, "run", "build"], project_dir)
+    _run(
+        [
+            npm,
+            "run",
+            "build",
+            "--",
+            "--base",
+            f"/site/{deploy_id}/",
+        ],
+        project_dir,
+    )
 
 
 def find_output_dir(project_dir: Path) -> Path:
+    """Find the production output directory containing index.html."""
+
     configured = getattr(settings, "BUILD_OUTPUT_DIR", "dist")
 
     names = [
@@ -84,23 +104,28 @@ def find_output_dir(project_dir: Path) -> Path:
 
 
 def process_deployment(deploy_id: str) -> None:
-    """Download source -> build -> upload production files to R2."""
+    """Download source from R2, build it, and upload production files."""
 
     work_root = Path(settings.WORK_DIR).resolve()
     project_dir = (work_root / "output" / deploy_id).resolve()
 
-    if not project_dir.is_relative_to(work_root):
+    if not deploy_id.isalnum() or len(deploy_id) > 20:
         raise BuildError("Invalid deployment ID")
 
+    if not project_dir.is_relative_to(work_root):
+        raise BuildError("Invalid deployment path")
+
     try:
-        # Step 1: Download source code from R2
+        # Step 1: Download source code from R2.
         count = download_prefix(
             f"output/{deploy_id}/",
             work_root,
         )
 
         if count == 0:
-            raise BuildError(f"No source files found for deployment {deploy_id}")
+            raise BuildError(
+                f"No source files found for deployment {deploy_id}"
+            )
 
         logger.info(
             "Downloaded %s source files for %s",
@@ -108,15 +133,15 @@ def process_deployment(deploy_id: str) -> None:
             deploy_id,
         )
 
-        # Step 2: Install dependencies and build project
-        build_project(project_dir)
+        # Step 2: Install dependencies and build the project.
+        build_project(project_dir, deploy_id)
 
-        # Step 3: Find production build directory
+        # Step 3: Locate the production build directory.
         build_dir = find_output_dir(project_dir)
 
         logger.info("Build output directory: %s", build_dir)
 
-        # Step 4: Upload production files to R2
+        # Step 4: Upload production files to R2.
         uploaded = upload_folder(
             build_dir,
             f"dist/{deploy_id}",
@@ -132,5 +157,6 @@ def process_deployment(deploy_id: str) -> None:
         )
 
     finally:
-        # Step 5: Remove temporary local files
+        # Step 5: Remove temporary deployment files.
         shutil.rmtree(project_dir, ignore_errors=True)
+
