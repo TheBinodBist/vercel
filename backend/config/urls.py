@@ -6,7 +6,6 @@ from serving.views import serve_site
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("uploads.urls")),
-
     # Deployment URL with or without trailing slash
     path(
         "site/<str:deployment_id>",
@@ -17,7 +16,6 @@ urlpatterns = [
         "site/<str:deployment_id>/",
         serve_site,
     ),
-
     # Serve deployment assets and nested paths
     path(
         "site/<str:deployment_id>/<path:path>",
